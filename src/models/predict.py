@@ -1,6 +1,7 @@
-"""Load the persisted ForgeSense model and perform inference."""
+"""ForgeSense model inference using persisted model metadata."""
 
 from pathlib import Path
+import json
 
 import joblib
 import numpy as np
@@ -12,11 +13,10 @@ import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-MODEL_PATH = (
-    PROJECT_ROOT
-    / "models"
-    / "random_forest.joblib"
-)
+MODEL_DIR = PROJECT_ROOT / "models"
+
+MODEL_PATH = MODEL_DIR / "random_forest.joblib"
+METADATA_PATH = MODEL_DIR / "metadata.json"
 
 
 # ============================================================
@@ -24,31 +24,97 @@ MODEL_PATH = (
 # ============================================================
 
 def load_model():
-    """Load the persisted Random Forest model."""
+    """Load the persisted machine-learning model."""
 
-    model = joblib.load(
-        MODEL_PATH
+    return joblib.load(MODEL_PATH)
+
+
+# ============================================================
+# LOAD METADATA
+# ============================================================
+
+def load_metadata():
+    """Load model metadata from JSON."""
+
+    with open(
+        METADATA_PATH,
+        "r",
+        encoding="utf-8",
+    ) as file:
+        return json.load(file)
+
+
+# ============================================================
+# CREATE EXAMPLE INPUT
+# ============================================================
+
+def create_example_input():
+    """
+    Create one example machine observation.
+
+    The input must contain the same 12 features
+    used during model training.
+    """
+
+    return np.array([
+        [
+            # Type_H
+            0,
+
+            # Type_L
+            1,
+
+            # Type_M
+            0,
+
+            # Air temperature [K]
+            300.0,
+
+            # Process temperature [K]
+            310.0,
+
+            # Rotational speed [rpm]
+            1500,
+
+            # Torque [Nm]
+            40.0,
+
+            # Tool wear [min]
+            100,
+
+            # Temperature difference [K]
+            10.0,
+
+            # Temperature ratio
+            310.0 / 300.0,
+
+            # Mechanical power [W]
+            1500 * 40.0 * (2 * np.pi / 60),
+
+            # Mechanical power [kW]
+            (
+                1500
+                * 40.0
+                * (2 * np.pi / 60)
+            ) / 1000,
+        ]
+    ])
+
+
+# ============================================================
+# GENERATE PREDICTION
+# ============================================================
+
+def predict(model, X, threshold):
+    """Generate prediction using metadata threshold."""
+
+    probability = model.predict_proba(X)[0, 1]
+
+    prediction = int(
+        probability >= threshold
     )
 
-    return model
-
-
-# ============================================================
-# PREDICTION
-# ============================================================
-
-def predict(model, features):
-    """Generate prediction and failure probability."""
-
-    probability = model.predict_proba(
-        features
-    )[:, 1]
-
-    prediction = (
-        probability >= 0.50
-    ).astype(int)
-
-    return prediction, probability
+    return probability, prediction
 
 
 # ============================================================
@@ -62,68 +128,81 @@ def main():
     print("=" * 70)
 
     # --------------------------------------------------------
-    # Load persisted model
+    # Load model
     # --------------------------------------------------------
 
-    print("\n[1/3] Loading persisted model...")
+    print("\n[1/4] Loading persisted model...")
 
     model = load_model()
 
     print("      Model loaded successfully.")
 
     # --------------------------------------------------------
-    # Create example input
+    # Load metadata
     # --------------------------------------------------------
 
-    print("\n[2/3] Creating example machine input...")
+    print("\n[2/4] Loading model metadata...")
 
-    example_machine = np.array([
-        [
-            300.1,   # Air temperature
-            310.2,   # Process temperature
-            1500,    # Rotational speed
-            42.0,    # Torque
-            120,     # Tool wear
-            10.1,    # Temperature difference
-            1.033,   # Temperature ratio
-            6597.3,  # Mechanical power
-            6.5973,  # Mechanical power kW
-            0.0,     # Type_H
-            1.0,     # Type_L
-            0.0,     # Type_M
-        ]
-    ])
+    metadata = load_metadata()
 
-    print(f"      Input shape: {example_machine.shape}")
+    model_name = metadata["model_name"]
+    model_version = metadata["model_version"]
+    threshold = metadata["threshold"]["value"]
 
-    # --------------------------------------------------------
-    # Generate prediction
-    # --------------------------------------------------------
-
-    print("\n[3/3] Generating prediction...")
-
-    prediction, probability = predict(
-        model,
-        example_machine,
+    print(
+        f"      Model: {model_name}"
     )
 
-    failure_probability = probability[0]
-    failure_prediction = prediction[0]
+    print(
+        f"      Version: {model_version}"
+    )
+
+    print(
+        f"      Threshold: {threshold:.2f}"
+    )
+
+    # --------------------------------------------------------
+    # Create input
+    # --------------------------------------------------------
+
+    print("\n[3/4] Creating example machine input...")
+
+    X = create_example_input()
+
+    print(
+        f"      Input shape: {X.shape}"
+    )
+
+    # --------------------------------------------------------
+    # Prediction
+    # --------------------------------------------------------
+
+    print("\n[4/4] Generating prediction...")
+
+    probability, prediction = predict(
+        model,
+        X,
+        threshold,
+    )
+
+    status = (
+        "FAILURE RISK"
+        if prediction == 1
+        else "NORMAL"
+    )
 
     print(
         f"      Failure probability: "
-        f"{failure_probability:.4f}"
+        f"{probability:.4f}"
     )
 
     print(
-        f"      Prediction: "
-        f"{failure_prediction}"
+        f"      Prediction: {prediction}"
     )
 
-    if failure_prediction == 1:
-        print("      Status: HIGH RISK")
-    else:
-        print("      Status: NORMAL")
+    print(
+        f"      Status: {status}"
+    )
 
     print("\n" + "=" * 70)
     print("✓ INFERENCE COMPLETED SUCCESSFULLY")
