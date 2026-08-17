@@ -12,4 +12,7 @@ data/processed/
 mlruns/
 
 .ipynb_checkpoints/
-.vscode/
+.vscode/mlflow.db
+
+# MLflow local tracking database
+mlflow.db
